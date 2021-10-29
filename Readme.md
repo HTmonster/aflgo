@@ -1,4 +1,6 @@
-# AFLGo: Directed Greybox Fuzzing
+# AFLGo: Directed Greybox Fuzzing 定向灰盒Fuzzing 
+> 📖: 对AFLGo的源码进行一个梳理
+
 <a href="https://mboehme.github.io/paper/CCS17.pdf" target="_blank"><img src="https://github.com/mboehme/mboehme.github.io/blob/master/paper/CCS17.png" align="right" width="250"></a>
 AFLGo is an extension of <a href="https://lcamtuf.coredump.cx/afl/" target="_blank">American Fuzzy Lop (AFL)</a>.
 Given a set of target locations (e.g., `folder/file.c:582`), AFLGo generates inputs specifically with the objective to exercise these target locations.
