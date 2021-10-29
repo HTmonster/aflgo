@@ -16,7 +16,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace po = boost::program_options;
+namespace po = boost::program_options; //程序命令行参数解析
 namespace bo = boost;
 using std::cout;
 using std::cerr;
@@ -250,8 +250,8 @@ int main(int argc, char *argv[]) {
         cerr << "Exception of unknown type!\n";
     }
 
-    std::ifstream dot = open_file(vm["dot"].as<std::string>());
-    cout << "Parsing " << vm["dot"].as<std::string>() << " ..\n";
+    std::ifstream dot = open_file(vm["dot"].as<std::string>());     //打开dot文件
+    cout << "Parsing " << vm["dot"].as<std::string>() << " ..\n";   //解析dot文件
     graph_t graph(0);
     bo::dynamic_properties dp(bo::ignore_other_properties);
     dp.property("node_id", get(&Vertex::name,  graph));
@@ -268,8 +268,8 @@ int main(int argc, char *argv[]) {
     is_cg = get_property(graph, bo::graph_name).find("Call graph") != std::string::npos;
     cout << "Working on " << (is_cg ? "callgraph" : "control flow graph") << "\n";
 
-    std::ifstream targets_stream = open_file(vm["targets"].as<std::string>());
-    std::ifstream names = open_file(vm["names"].as<std::string>());
+    std::ifstream targets_stream = open_file(vm["targets"].as<std::string>()); //打开target文件
+    std::ifstream names = open_file(vm["names"].as<std::string>());            //打开names文件 （包含每个节点的名字）
     std::vector<vertex_desc> targets;
     unordered_map<std::string, double> cg_distance;
     unordered_map<std::string, double> bb_distance;
@@ -296,8 +296,8 @@ int main(int argc, char *argv[]) {
                                   cg_callsites_stream, cg_distance, bb_distance);
     }
 
-    cout << "Calculating distance..\n";
-    std::ofstream outstream(vm["out"].as<std::string>());
+    cout << "Calculating distance..\n";                                        //计算距离
+    std::ofstream outstream(vm["out"].as<std::string>());                      //并写出
     for (std::string line; getline(names, line); ) {
         bo::trim(line);
         distance(graph, line, targets, outstream, bb_distance);
