@@ -96,6 +96,7 @@ def distance (name):
     out.write (",")
     out.write (str (distance))
     out.write ("\n")
+    # 格式： 名称,距离
 
 ##################################
 # Main function

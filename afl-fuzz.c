@@ -1396,6 +1396,7 @@ EXP_ST void setup_shm(void) {
   memset(virgin_crash, 255, MAP_SIZE);
 
   /* Allocate 24 byte more for distance info */
+  // 分配与插桩时候同样大的距离信息的共享空间
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE + 16, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");

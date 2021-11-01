@@ -94,21 +94,27 @@ echo "Targets:"
 cat $TMP_DIR/BBtargets.txt
 ```
 6) **注意**: 如果没有目标，就没有必要插桩了。
-7) Generate CG and intra-procedural CFGs from subject (i.e., libxml2).
+7) 从目标(例如libxml2)中生成CG或者程序内CFG
 ```bash
-# Set aflgo-instrumenter
+# 设置 AFLgo 插桩
 export CC=$AFLGO/afl-clang-fast
 export CXX=$AFLGO/afl-clang-fast++
 
-# Set aflgo-instrumentation flags
+# 设置 AFLGo 插桩 标志
 export COPY_CFLAGS=$CFLAGS
 export COPY_CXXFLAGS=$CXXFLAGS
+#  添加的标志主要是这里
 export ADDITIONAL="-targets=$TMP_DIR/BBtargets.txt -outdir=$TMP_DIR -flto -fuse-ld=gold -Wl,-plugin-opt=save-temps"
+# -targets 目标点位置文件  例：valid.c:2640
+# -outdir  图导出的目录
+# -flto    连接时间优化
+# -fuse-ld=gold  使用gold连接器
+# -Wl,-plugin-pot=save-temp   (wl)将后面的参数传给连接器,整体是保存子啊整个程序的.bc文件 为了是进一步生成CG
 export CFLAGS="$CFLAGS $ADDITIONAL"
 export CXXFLAGS="$CXXFLAGS $ADDITIONAL"
 
-# Build libxml2 (in order to generate CG and CFGs).
-# Meanwhile go have a coffee ☕️
+# 建立 libxml2 (为了生成 CG和CFGs).
+#    这里就是具体地编译某个东西了,插桩的逻辑主要在afl-llvm-pass.so.cc,见源码
 export LDFLAGS=-lpthread
 pushd $SUBJECT
   ./autogen.sh
@@ -116,67 +122,61 @@ pushd $SUBJECT
   make clean
   make xmllint
 popd
-# * If the linker (CCLD) complains that you should run ranlib, make
-#   sure that libLTO.so and LLVMgold.so (from building LLVM with Gold)
-#   can be found in /usr/lib/bfd-plugins
-# * If the compiler crashes, there is some problem with LLVM not 
-#   supporting our instrumentation (afl-llvm-pass.so.cc:540-577).
-#   LLVM has changed the instrumentation-API very often :(
-#   -> Check LLVM-version, fix problem, and prepare pull request.
-# * You can speed up the compilation with a parallel build. However,
-#   this may impact which BBs are identified as targets. 
-#   See https://github.com/aflgo/aflgo/issues/41.
+# * 如果链接器（CCLD）抱怨说你应该运行ranlib，请确保在/usr/lib/bfd-plugins中可以找到libLTO.so和LLVMgold.so（用Gold构建LLVM）
+# * 如果编译器崩溃了，可能是LLVM不支持我们的插桩（afl-llvm-pass.so.cc:540-577）。LLVM经常改变插桩的API。
+# * 你可以通过并行构建来加快编译的速度。但是，这可能会影响哪些BB被识别为目标。见 https://github.com/aflgo/aflgo/issues/41.
 
 
-# Test whether CG/CFG extraction was successful
-$SUBJECT/xmllint --valid --recover $SUBJECT/test/dtd3
-ls $TMP_DIR/dot-files
+# 测试 CG/CFG 是否被成功提取
+$SUBJECT/xmllint --valid --recover $SUBJECT/test/dtd3 #程序是否正常运行
+ls $TMP_DIR/dot-files                                 #列出生成的文件（dot文件）
 echo "Function targets"
-cat $TMP_DIR/Ftargets.txt
+cat $TMP_DIR/Ftargets.txt                             #目标函数  例如：xmlAddID
 
-# Clean up
-cat $TMP_DIR/BBnames.txt | rev | cut -d: -f2- | rev | sort | uniq > $TMP_DIR/BBnames2.txt && mv $TMP_DIR/BBnames2.txt $TMP_DIR/BBnames.txt
-cat $TMP_DIR/BBcalls.txt | sort | uniq > $TMP_DIR/BBcalls2.txt && mv $TMP_DIR/BBcalls2.txt $TMP_DIR/BBcalls.txt
+# 清理
+cat $TMP_DIR/BBnames.txt | rev | cut -d: -f2- | rev | sort | uniq > $TMP_DIR/BBnames2.txt && mv $TMP_DIR/BBnames2.txt $TMP_DIR/BBnames.txt  #提取出基本块的名字 例：HTMLparser.c:109 HTMLparser.c:112
+cat $TMP_DIR/BBcalls.txt | sort | uniq > $TMP_DIR/BBcalls2.txt && mv $TMP_DIR/BBcalls2.txt $TMP_DIR/BBcalls.txt                             #提取出基本块的调用关系 例 HTMLparser.c:117,__xmlRaiseError
 
-# Generate distance ☕️
-# $AFLGO/scripts/genDistance.sh is the original, but significantly slower, version
-$AFLGO/scripts/gen_distance_fast.py $SUBJECT $TMP_DIR xmllint
+# 生成距离 ☕️
+# AFLGO/scripts/genDistance.sh是原始版本，但速度明显较慢
+$AFLGO/scripts/gen_distance_fast.py $SUBJECT $TMP_DIR xmllint  
 
-# Check distance file
+# 检查距离文件
 echo "Distance values:"
 head -n5 $TMP_DIR/distance.cfg.txt
 echo "..."
 tail -n5 $TMP_DIR/distance.cfg.txt
 ```
-8) Note: If `distance.cfg.txt` is empty, there was some problem computing the CG-level and BB-level target distance. See `$TMP_DIR/step*`.
-9) Instrument subject (i.e., libxml2)
+8) 注意: 如果没有`distance.cfg.txt`文件, 是因为计算CG级别和BB级别时候出错了. See `$TMP_DIR/step*`.
+9) 插桩目标文件 (i.e., libxml2)    具体逻辑查看`afl-llvm-pass.so.cc`文件
 ```bash
-export CFLAGS="$COPY_CFLAGS -distance=$TMP_DIR/distance.cfg.txt"
+export CFLAGS="$COPY_CFLAGS -distance=$TMP_DIR/distance.cfg.txt"  #将距离文件传给编译器
 export CXXFLAGS="$COPY_CXXFLAGS -distance=$TMP_DIR/distance.cfg.txt"
 
-# Clean and build subject with distance instrumentation ☕️
+# 清楚并插桩距离
 pushd $SUBJECT
   make clean
-  ./configure --disable-shared
+  ./configure --disable-shared    #禁止创建共享库
   make xmllint
 popd
 ```
 
-If your compilation crashes in this step, have a look at Issue [#4](https://github.com/aflgo/aflgo/issues/4#issuecomment-333947041).
+如果你的编译在这一步崩溃了，请看Issue [#4](https://github.com/aflgo/aflgo/issues/4#issuecomment-333947041).
 
-# How to fuzz the instrumented binary
-* We set the exponential annealing-based power schedule (-z exp).
-* We set the time-to-exploitation to 45min (-c 45m), assuming the fuzzer is run for about an hour.
+# 如何fuzz插桩了的二进制
+> AFLGo 增加的逻辑看   `afl-fuzz.c` 文件
+* 我们设置了基于**指数**的退火法功率调度 (-z exp).
+* 我们将探索时间设置为45分钟（-c 45m），假设模糊器运行了大约一个小时
 ```bash
-# Construct seed corpus
+# 构建种子语料库
 mkdir in
 cp $SUBJECT/test/dtd* in
 cp $SUBJECT/test/dtds/* in
 
 $AFLGO/afl-fuzz -S ef709ce2 -z exp -c 45m -i in -o out $SUBJECT/xmllint --valid --recover @@
 ```
-* **Tipp**: Concurrently fuzz the most recent version as master with classical AFL :)
+* **小技巧**: 同时用经典的AFL将最新的版本作为主版本进行模糊处理 :)
 ```bash
 $AFL/afl-fuzz -M master -i in -o out $MASTER/xmllint --valid --recover @@
 ```
-* Run more [fuzzing scripts](./scripts/fuzz) of various real programs like Binutils, jasper, lrzip, libming and DARPA CGC. 
+* 查看[fuzzing scripts](./scripts/fuzz) 更多的真实程序案例，例如Binutils, jasper, lrzip, libming 和 DARPA CGC。 

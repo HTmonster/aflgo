@@ -3,6 +3,9 @@
 Construct CG and calculate distances, similarly to genDistance.sh.
 The distance is parallelized and uses the compiled distance calculation
 version by default.
+
+构建CG和计算距离，同 genDistance.sh
+距离的计算是并行的，并且默认使用编译后的距离计算版本。
 """
 import argparse
 import multiprocessing as mp
@@ -90,7 +93,8 @@ def construct_callgraph(args, binaries):
     if fuzzer:
         tmp = next(args.binaries_directory.glob(f"{fuzzer.name}.0.0.*.bc"))
         binaries = [tmp]
-
+    
+    # 创建备份
     for binary in binaries:
         opt_callgraph(args, binary)
         temp = dot_files / f"{binary.name}.callgraph.temp.dot"
@@ -100,6 +104,7 @@ def construct_callgraph(args, binaries):
         temp.unlink()
 
     # The goal is to have one file called "callgraph.dot"
+    # 目标是生成一个名为 "callgraph.dot "的文件。
     if fuzzer:
         cg = dot_files / f"{binary.name}.callgraph.dot"
         cg.replace(callgraph_out)
@@ -122,6 +127,7 @@ def exec_distance_prog(dot, targets, out, names, cg_distance=None,
             called functions.
         py_version: If true, the python version is used.
     """
+    # 选择是cpp版本还是python版本计算距离
     prog = DIST_BIN if not py_version else DIST_PY
     cmd = [prog,
            "-d", dot,
@@ -255,31 +261,32 @@ def is_path_to_dir(path):
 
 def main():
     global STEP
+    # 解析参数 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binaries_directory", metavar="binaries-directory",
                         type=is_path_to_dir,
                         help="Directory where binaries of 'subject' are "
-                             "located")
+                             "located")  #二进制程序位置
     parser.add_argument("temporary_directory", metavar="temporary-directory",
                         type=is_path_to_dir,
                         help="Directory where dot files and target files are "
-                             "located")
+                             "located")  #临时文件目录 包含着dot文件
     parser.add_argument("fuzzer_name", metavar="fuzzer-name",
                         nargs='?',
-                        help="Name of fuzzer binary")
+                        help="Name of fuzzer binary") #被测试的程序
     parser.add_argument("-p" ,"--python-only",
                         action="store_true",
                         default=False,
                         help="Use the python version for distance calculation")
     args = parser.parse_args()
 
-    # Additional sanity checks
+    # 另外的合理性检查
     binaries = list(args.binaries_directory.glob("*.0.0.*.bc"))
     if len(binaries) == 0:
         parser.error("Couldn't find any binaries in folder "
                      f"{args.binaries_directory}.")
     if args.fuzzer_name:
-        tmp = args.binaries_directory.glob(f"{args.fuzzer_name}.0.0.*.bc")
+        tmp = args.binaries_directory.glob(f"{args.fuzzer_name}.0.0.*.bc") 
         args.fuzzer_name = args.binaries_directory / args.fuzzer_name
         if not args.fuzzer_name.exists() or args.fuzzer_name.is_dir():
             parser.error(f"Couldn't find {args.fuzzer_name}.")
@@ -289,8 +296,8 @@ def main():
 
     STEP = get_resume(args)
     if not STEP:
-        construct_callgraph(args, binaries),
-    calculating_distances(args),
+        construct_callgraph(args, binaries), #先构建调用图
+    calculating_distances(args),             #在计算距离
     done(args)
 
 

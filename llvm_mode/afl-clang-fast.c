@@ -140,6 +140,7 @@ static void edit_params(u32 argc, char** argv) {
   while (--argc) {
     u8* cur = *(++argv);
 
+    // 识别添加的编译命令
     if (!strncmp(cur, "-distance", 9)
         || !strncmp(cur, "-targets", 8)
         || !strncmp(cur, "-outdir", 7))

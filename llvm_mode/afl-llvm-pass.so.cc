@@ -183,42 +183,46 @@ bool AFLCoverage::runOnModule(Module &M) {
   bool is_aflgo = false;
   bool is_aflgo_preprocessing = false;
 
+  // 判断 -target 和 -distance 参数是否同时给出。（因为这是编译的两个阶段）
   if (!TargetsFile.empty() && !DistanceFile.empty()) {
     FATAL("Cannot specify both '-targets' and '-distance'!");
     return false;
   }
 
-  std::list<std::string> targets;
-  std::map<std::string, int> bb_to_dis;
-  std::vector<std::string> basic_blocks;
+  std::list<std::string> targets;                 //目标点              字符串的列表
+  std::map<std::string, int> bb_to_dis;           //基本块与对应距离     字符串:数字的map
+  std::vector<std::string> basic_blocks;          //基本块的名字         字符串的数组
 
+  /*--------------- 第一次编译阶段 ----------------*/
   if (!TargetsFile.empty()) {
 
+    // 输出目录不能为空
     if (OutDirectory.empty()) {
       FATAL("Provide output directory '-outdir <directory>'");
       return false;
     }
 
-    std::ifstream targetsfile(TargetsFile);
+    std::ifstream targetsfile(TargetsFile);       //目标文件
     std::string line;
     while (std::getline(targetsfile, line))
       targets.push_back(line);
-    targetsfile.close();
+    targetsfile.close();                         //解析target文件
 
-    is_aflgo_preprocessing = true;
-
+    is_aflgo_preprocessing = true; 
+  /*--------------- 第二次编译阶段 ----------------*/
   } else if (!DistanceFile.empty()) {
 
-    std::ifstream cf(DistanceFile);
-    if (cf.is_open()) {
+    std::ifstream cf(DistanceFile);                    
+    if (cf.is_open()) {                          //解析distance文件
 
       std::string line;
       while (getline(cf, line)) {
-
+        
+        //距离格式  基本块,距离
         std::size_t pos = line.find(",");
         std::string bb_name = line.substr(0, pos);
         int bb_dis = (int) (100.0 * atof(line.substr(pos + 1, line.length()).c_str()));
-
+        //距离*100 取整
         bb_to_dis.emplace(bb_name, bb_dis);
         basic_blocks.push_back(bb_name);
 
@@ -235,6 +239,7 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   /* Show a banner */
+  /* 显示 banner */
 
   char be_quiet = 0;
 
@@ -249,7 +254,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   } else be_quiet = 1;
 
-  /* Decide instrumentation ratio */
+  /* 决定插桩比例 */
 
   char* inst_ratio_str = getenv("AFL_INST_RATIO");
   unsigned int inst_ratio = 100;
@@ -262,7 +267,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
   }
 
-  /* Default: Not selective */
+  /* 默认情况：不做选择*/
   char* is_selective_str = getenv("AFLGO_SELECTIVE");
   unsigned int is_selective = 0;
 
@@ -281,47 +286,54 @@ bool AFLCoverage::runOnModule(Module &M) {
   }
 
   /* Instrument all the things! */
+  /* 插桩*/
 
   int inst_blocks = 0;
 
+  /* 第一次  预处理  计算距离 */
   if (is_aflgo_preprocessing) {
 
-    std::ofstream bbnames(OutDirectory + "/BBnames.txt", std::ofstream::out | std::ofstream::app);
-    std::ofstream bbcalls(OutDirectory + "/BBcalls.txt", std::ofstream::out | std::ofstream::app);
-    std::ofstream fnames(OutDirectory + "/Fnames.txt", std::ofstream::out | std::ofstream::app);
-    std::ofstream ftargets(OutDirectory + "/Ftargets.txt", std::ofstream::out | std::ofstream::app);
+    std::ofstream bbnames(OutDirectory + "/BBnames.txt", std::ofstream::out | std::ofstream::app);      //基本块名字
+    std::ofstream bbcalls(OutDirectory + "/BBcalls.txt", std::ofstream::out | std::ofstream::app);      //基本块调用关系
+    std::ofstream fnames(OutDirectory + "/Fnames.txt", std::ofstream::out | std::ofstream::app);        //函数名字
+    std::ofstream ftargets(OutDirectory + "/Ftargets.txt", std::ofstream::out | std::ofstream::app);    //函数目标
 
     /* Create dot-files directory */
+    // 创建dot文件目录
     std::string dotfiles(OutDirectory + "/dot-files");
     if (sys::fs::create_directory(dotfiles)) {
       FATAL("Could not create directory %s.", dotfiles.c_str());
     }
 
-    for (auto &F : M) {
+    // 模块->函数->基本块->指令
+    for (auto &F : M) {                                 //遍历模块中的函数
 
       bool has_BBs = false;
-      std::string funcName = F.getName().str();
+      std::string funcName = F.getName().str();         //函数名称
 
-      /* Black list of function names */
+      /* Black list of function names */                //是否在函数黑名单  屏蔽了一些常见的函数
       if (isBlacklisted(&F)) {
         continue;
       }
 
-      bool is_target = false;
-      for (auto &BB : F) {
+      bool is_target = false;                           
+      for (auto &BB : F) {                             //遍历函数中的基本块
 
         std::string bb_name("");
         std::string filename;
         unsigned line;
 
-        for (auto &I : BB) {
-          getDebugLoc(&I, filename, line);
+        for (auto &I : BB) {                          //遍历基本块中的指令
+          getDebugLoc(&I, filename, line);            //获得指令的文件和行数
 
-          /* Don't worry about external libs */
+
+          /*去除一些外部库和没有地址的指令*/
+          /* Don't worry about external libs */       
           static const std::string Xlibs("/usr/");
           if (filename.empty() || line == 0 || !filename.compare(0, Xlibs.size(), Xlibs))
             continue;
 
+          /*基本块的名称*/
           if (bb_name.empty()) {
 
             std::size_t found = filename.find_last_of("/\\");
@@ -329,8 +341,10 @@ bool AFLCoverage::runOnModule(Module &M) {
               filename = filename.substr(found + 1);
 
             bb_name = filename + ":" + std::to_string(line);
+            // 基本块名称格式： 文件名：行
           }
-
+          
+          //判断是不是目标块
           if (!is_target) {
               for (auto &target : targets) {
                 std::size_t found = target.find_last_of("/\\");
@@ -341,25 +355,31 @@ bool AFLCoverage::runOnModule(Module &M) {
                 std::string target_file = target.substr(0, pos);
                 unsigned int target_line = atoi(target.substr(pos + 1).c_str());
 
+                //通过比对文件名和所在的行数
                 if (!target_file.compare(filename) && target_line == line)
                   is_target = true;
 
               }
             }
 
+            // call 指令
             if (auto *c = dyn_cast<CallInst>(&I)) {
 
               std::size_t found = filename.find_last_of("/\\");
               if (found != std::string::npos)
                 filename = filename.substr(found + 1);
-
+              //记录下调用的函数 CG
               if (auto *CalledF = c->getCalledFunction()) {
                 if (!isBlacklisted(CalledF))
                   bbcalls << bb_name << "," << CalledF->getName().str() << "\n";
+                //格式: 基本块名称，被调用的基本块名称
               }
             }
         }
 
+
+        // 同名问题：有些基本块在源码中位置在同一行，命名会重名
+        // 解决方法: 在名字后加上随机数
         if (!bb_name.empty()) {
 
           BB.setName(bb_name + ":");
@@ -375,6 +395,7 @@ bool AFLCoverage::runOnModule(Module &M) {
           bbnames << BB.getName().str() << "\n";
           has_BBs = true;
 
+// 补充CG的宏定义  会在运行时的函数调用记录下来
 #ifdef AFLGO_TRACING
           auto *TI = BB.getTerminator();
           IRBuilder<> Builder(TI);
@@ -391,24 +412,27 @@ bool AFLCoverage::runOnModule(Module &M) {
         }
       }
 
+      // 如果有基本块，则打印CFG
       if (has_BBs) {
         /* Print CFG */
-        std::string cfgFileName = dotfiles + "/cfg." + funcName + ".dot";
+        std::string cfgFileName = dotfiles + "/cfg." + funcName + ".dot"; //创建一个函数的CFG文件
         std::error_code EC;
         raw_fd_ostream cfgFile(cfgFileName, EC, sys::fs::F_None);
         if (!EC) {
-          WriteGraph(cfgFile, &F, true);
+          WriteGraph(cfgFile, &F, true);                                  //写入调用图
         }
 
+        // 目标基本块所在的函数 和函数名
         if (is_target)
           ftargets << F.getName().str() << "\n";
         fnames << F.getName().str() << "\n";
       }
     }
-
+  /* 第二次 插桩距离 */
   } else {
     /* Distance instrumentation */
 
+    //定义LLVM中的整数类型，插桩时需要声明插入数值的类型
     LLVMContext &C = M.getContext();
     IntegerType *Int8Ty  = IntegerType::getInt8Ty(C);
     IntegerType *Int32Ty = IntegerType::getInt32Ty(C);
@@ -439,7 +463,7 @@ bool AFLCoverage::runOnModule(Module &M) {
 
       int distance = -1;
 
-      for (auto &BB : F) {
+      for (auto &BB : F) {   //遍历每个基本块
 
         distance = -1;
 
@@ -449,7 +473,7 @@ bool AFLCoverage::runOnModule(Module &M) {
           for (auto &I : BB) {
             std::string filename;
             unsigned line;
-            getDebugLoc(&I, filename, line);
+            getDebugLoc(&I, filename, line);  //获得基本块的文件名和行数
 
             if (filename.empty() || line == 0)
               continue;
@@ -457,10 +481,11 @@ bool AFLCoverage::runOnModule(Module &M) {
             if (found != std::string::npos)
               filename = filename.substr(found + 1);
 
-            bb_name = filename + ":" + std::to_string(line);
+            bb_name = filename + ":" + std::to_string(line); //基本块的名字为 文件名:行数
             break;
           }
 
+          /*比较名字是否相同判断是否是需要插桩的基本块*/
           if (!bb_name.empty()) {
 
             if (find(basic_blocks.begin(), basic_blocks.end(), bb_name) == basic_blocks.end()) {
@@ -471,6 +496,7 @@ bool AFLCoverage::runOnModule(Module &M) {
             } else {
 
               /* Find distance for BB */
+              // 找到基本块的距离
 
               if (AFL_R(100) < dinst_ratio) {
                 std::map<std::string,int>::iterator it;
@@ -482,6 +508,8 @@ bool AFLCoverage::runOnModule(Module &M) {
             }
           }
         }
+
+        /*   开始插桩   AFL的basicblock edge插桩逻辑*/
 
         BasicBlock::iterator IP = BB.getFirstInsertionPt();
         IRBuilder<> IRB(&(*IP));
@@ -521,24 +549,32 @@ bool AFLCoverage::runOnModule(Module &M) {
             IRB.CreateStore(ConstantInt::get(Int32Ty, cur_loc >> 1), AFLPrevLoc);
         Store->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 
+        
+        /*  AFLGo的插桩逻辑   */
+        
         if (distance >= 0) {
 
           ConstantInt *Distance =
               ConstantInt::get(LargestType, (unsigned) distance);
 
           /* Add distance to shm[MAPSIZE] */
+          /* 增加距离到分享内存中*/
+          
 
           Value *MapDistPtr = IRB.CreateBitCast(
               IRB.CreateGEP(MapPtr, MapDistLoc), LargestType->getPointerTo());
           LoadInst *MapDist = IRB.CreateLoad(MapDistPtr);
           MapDist->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 
+
+          /*该基本块的距离累加到MapDistLoc的位置上*/
           Value *IncrDist = IRB.CreateAdd(MapDist, Distance);
           IRB.CreateStore(IncrDist, MapDistPtr)
               ->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
 
           /* Increase count at shm[MAPSIZE + (4 or 8)] */
 
+          /*递增MapCntLoc位置的值*/
           Value *MapCntPtr = IRB.CreateBitCast(
               IRB.CreateGEP(MapPtr, MapCntLoc), LargestType->getPointerTo());
           LoadInst *MapCnt = IRB.CreateLoad(MapCntPtr);
